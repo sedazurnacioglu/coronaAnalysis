@@ -1,0 +1,275 @@
+library(flexdashboard)
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(plotly)
+library(highcharter)
+```
+
+read.csv fonksiyonu ile github üzerinden verimizi çekip coronavirus olarak atama atıyoruz. R'ın karakter olan değişkenleri faktör olarak tanımlamaması için stringsAsFactors'e FALSE olarak atama yapıyoruz.
+```{r}
+coronavirus <- read.csv("https://raw.githubusercontent.com/RamiKrispin/coronavirus/master/csv/coronavirus.csv", stringsAsFactors = FALSE)
+```
+
+
+pivot_wider fonksiyonu ile veride bir değişken baz alarak sütun sayısını artırıp, satır sayısını azaltıyoruz. Buradaki amacımız type değişkenini ayırmaktır. Devamında değişkenlerde Na olarak tanımlı olan değerleri 0 olarak atıyoruz.
+```{r}
+corona <- coronavirus %>% 
+ pivot_wider(names_from = type, values_from = cases)
+corona$confirmed[is.na(corona$confirmed)] = 0
+corona$death[is.na(corona$death)] = 0
+corona$recovered[is.na(corona$recovered)] = 0
+```
+
+filter fonksiyonu ile verimizden ülke olarak Türkiye'yi seçip "coronavirus_Turkey" değişkenini oluşturuyoruz.
+```{r}
+coronavirus_Turkey <- corona %>%
+  filter(country == "Turkey")
+```
+
+coronavirus_Turkey değişkenine mutate fonksiyonu ile yeni değişkenler ekliyoruz. Yeni eklediğimiz değişkenler vaka sayılarının, vefat sayılarının, iyileşen ve aktif vaka sayılarının kümülatif olarak toplanması ile oluşturulmuştur.
+```{r}
+coronavirus_Turkey <- coronavirus_Turkey %>%
+  mutate(confirmed_cum = cumsum(confirmed)) %>%
+  mutate(confirmed_death = cumsum(death)) %>%
+  mutate(confirmed_recovered = cumsum(recovered)) %>%
+  mutate(confirmed_active = cumsum(confirmed)-cumsum(death)-cumsum(recovered))
+```
+
+coronavirus_Turkey değişkeni üzerinde yaptığımız değişken eklemeleri dünyadaki tüm ülkeleri içeren corona değişkenine de uygulanmıştır.
+```{r}
+corona <- corona %>%
+  mutate(confirmed_cum = cumsum(confirmed)) %>%
+  mutate(confirmed_death = cumsum(death)) %>%
+  mutate(confirmed_recovered = cumsum(recovered)) %>%
+  mutate(confirmed_active = cumsum(confirmed)-cumsum(death)-cumsum(recovered))
+```
+
+Dünya
+
+group_by fonksiyonu ile ülkelere göre gruplandırma yapıyoruz. Ardından summarise fonksiyonu ile ülkelerin toplam vaka sayılarını gruplandırıyoruz. Arrange fonksiyonu ile sıralama yapıyoruz. Fakat sıralama artan yönündedir. desc fonksiyonu ile sıralamayı azalana doğru yapabiliriz. Elde ettiğimiz veriyi ry değişkenine atıyoruz. Ardından highcharter paketini kullanrak elde ettiğimiz "Dünyada En Yüksek Toplam Vaka Sayısına Sahip 10 Ülke" verisinin grafiğini çizdiriyoruz.
+
+```{r}
+ry<-corona %>% group_by(country) %>%
+     summarise(confirmed = sum(confirmed)) %>%
+     arrange(confirmed) %>%
+     arrange(desc(confirmed))
+ry%>%
+  arrange(desc(confirmed))%>%
+  head(10) %>% 
+  hchart(type = "bar", hcaes(x = country, y = confirmed)) %>%
+  hc_yAxis(text = "Ülke") %>% 
+  hc_xAxis(text = "Toplam Hasta Sayısı")
+```
+
+group_by fonksiyonu ile ülke ve tarihe göre gruplandırma yapıyoruz. Ardından summarise fonksiyonu ile ülkelere toplam vaka sayılarını gruplandırıyoruz. pivot_wider fonksiyonu ile de type değişkenini ayırıyoruz. arrange fonksiyonu ile tarihe göre sütunları düzenleriz. Arından mutate fonksiyonu ile toplam vaka sayısı, toplam iyileşen sayısı ve toplam vefat sayısı değişkenlerini elde ederiz. Daha sonra plotly paketi ile gerekli değerler girilerek grafiğimiz elde edilir.
+
+```{r}
+coronavirus %>% 
+  group_by(type, date) %>%
+  summarise(total_cases = sum(cases)) %>%
+  pivot_wider(names_from = type, values_from = total_cases) %>%
+  arrange(date) %>%
+  mutate(confirmed_total = cumsum(confirmed),
+                recovered_total = cumsum(recovered),
+                death_total = cumsum(death)) %>%
+  plot_ly(x = ~ date,
+                  y = ~ confirmed_total,
+                  name = 'Toplam Vaka Sayısı', 
+                  fillcolor = '#7ec0ee',
+                  type = 'scatter',
+                  mode = 'none', 
+                  stackgroup = 'one') %>%
+  add_trace(y = ~ death_total, 
+             name = "Toplam Vefat Sayısı",
+             fillcolor = '#E41317') %>%
+  add_trace(y = ~recovered_total, 
+            name = 'Toplam İyileşen Sayısı', 
+            fillcolor = 'forestgreen') %>%
+  layout(legend = list(x = 0.1, y = 0.9),
+         yaxis = list(title = "Toplam Vaka Sayısı"),
+         xaxis = list(title = "Tarih"))
+```
+
+
+Verimizden ülke seçimleri yapıp atama yapıyoruz. Daha sonra bu ülkelerin toplam vaka sayılarını yeni değişken olarak ekliyoruz. Seçilen ülkeler ABD, Almanya, Japonya ve Brazilya'dır.
+```{r}
+coronavirus_US <- corona %>%
+  filter(country == "US")
+coronavirus_US <- coronavirus_US %>%
+  mutate(confirmed_cum = cumsum(confirmed))
+coronavirus_Germany <- corona %>%
+  filter(country == "Germany")
+coronavirus_Germany <- coronavirus_Germany %>%
+  mutate(confirmed_cum = cumsum(confirmed))
+coronavirus_Japan <- corona %>%
+  filter(country == "Japan")
+coronavirus_Japan <- coronavirus_Japan %>%
+  mutate(confirmed_cum = cumsum(confirmed))
+coronavirus_Brazil <- corona %>%
+  filter(country == "Brazil")
+coronavirus_Brazil <- coronavirus_Brazil %>%
+  mutate(confirmed_cum = cumsum(confirmed))
+```
+
+left_join fonksiyonu ile "coronavirus_Turkey" verimize diğer ülkelerin değerlerini yeni değişken olarak ekliyoruz.
+```{r}
+tophastgr <- coronavirus_Turkey %>% 
+  left_join(coronavirus_US, by = "date") %>%
+  left_join(coronavirus_Germany, by = "date") %>%
+  left_join(coronavirus_Japan, by = "date") %>%
+  left_join(coronavirus_Brazil, by = "date")
+```
+
+plotly paketi ile gerekli atamalar yapılarak "tophastgr" verimizin  logaritmik olarak çizgi grafiğini oluşturuyoruz. Elde ettiğimiz grafik ile ülkeler arasında toplam vaka sayılarının karşılaştırmasını yapabiliriz.
+```{r}
+plot_ly(data = tophastgr) %>%
+  add_lines(x = ~ date,
+            y = ~ confirmed_cum,
+            name = "Brazil",  line = list(width = 2)) %>%
+  add_lines(x = ~ date,
+            y = ~ confirmed_cum.y.y,
+                    name = "Japan",  line = list(width = 2)) %>%
+  add_lines(x = ~ date,
+            y = ~ confirmed_cum.x.x,
+            name = "Germany",  line = list(width = 2)) %>%
+  add_lines(x = ~ date,
+            y = ~ confirmed_cum.y,
+            name = "US",  line = list(width = 2)) %>%
+  add_lines(x = ~ date,
+            y = ~ confirmed_cum.x,
+            name = "Turkey",  line = list(width = 2)) %>%
+  layout(yaxis = list(title = "Toplam Vaka Sayısı",type = "log"),
+         xaxis = list(title = "Tarih"),
+         legend = list(x = 0.7, y = 0.3))
+```
+
+
+
+"Dünyada En Yüksek Toplam Vaka Sayısına Sahip 10 Ülke"nin plotly paketinden yararlanarak bu kez pasta grafiğini çizdiriyoruz.
+```{r}
+ry %>%
+  arrange(desc(confirmed))%>%
+  head(10) %>%
+  plot_ly(labels = ~country, values = ~confirmed,
+          textinfo="label+percent",
+          type = 'pie')
+```
+
+
+Türkiye
+
+Yukarıda açıklamaları yapılan grafikler bu kez de oluşturduğumuz "coronavirus_Turkey" verisi ile Türkiye için oluşturulacaktır.
+
+Toplam Vaka Sayısı Grafiği
+```{r}
+plot_ly(data = coronavirus_Turkey) %>%
+  add_lines(x = ~ date,
+            y = ~ confirmed_cum,
+            name = "Türkiye",  line = list(width = 3)) %>%
+  layout(yaxis = list(title = "Toplam Vaka Sayısı Grafiği",type = "log"),
+         xaxis = list(title = "Tarih"),
+         legend = list(x = 0.7, y = 0.3))
+```
+
+Toplam Vaka Sayısı Grafiği
+```{r}
+plot_ly(data = coronavirus_Turkey) %>%
+  add_lines(x = ~ date,
+                    y = ~ confirmed_cum,
+                    name = "Türkiye",  line = list(width = 3)) %>%
+  layout(title = "Toplam Vaka Sayısı Grafiği",
+         yaxis = list(title = "Toplam Vaka Sayısı",type = "scatter"),
+         xaxis = list(title = "Tarih"),
+         legend = list(x = 0.7, y = 0.3))
+```
+
+Günlük Vaka Sayısı Grafiği
+```{r}
+plot_ly(data = coronavirus_Turkey) %>%
+  add_lines(x = ~ date,
+            y = ~ confirmed,
+            name = "Türkiye",  line = list(width = 3)) %>%
+  layout(yaxis = list(title = "Günlük Vaka Sayısı",type = "scatter"),
+         xaxis = list(title = "Tarih"),
+         legend = list(x = 0.7, y = 0.3))
+```
+
+Günlük Vefat Sayısı Grafiği
+```{r}
+plot_ly(data = coronavirus_Turkey) %>%
+  add_lines(x = ~ date,
+            y = ~ death,
+            name = "Türkiye",  line = list(width = 3)) %>%
+  layout(title = "Günlük Vefat Sayısı Grafiği",
+         yaxis = list(title = "Günlük Vefat Sayısı",type = "scatter"),
+         xaxis = list(title = "Tarih"),
+         legend = list(x = 0.7, y = 0.3))
+```
+
+Toplam Vefat Sayısı Grafiği
+```{r}
+plot_ly(data = coronavirus_Turkey) %>%
+  add_lines(x = ~ date,
+            y = ~ confirmed_death,
+            name = "Türkiye",  line = list(width = 3)) %>%
+  layout(title = "Toplam Vefat Sayısı Grafiği",
+         yaxis = list(title = "Toplam Vefat Sayısı",type = "scatter"),
+         xaxis = list(title = "Tarih"),
+         legend = list(x = 0.7, y = 0.3))
+```
+
+Günlük İyileşen Sayısı Grafiği
+```{r}
+plot_ly(data = coronavirus_Turkey) %>%
+  add_lines(x = ~ date,
+            y = ~ recovered,
+            name = "Türkiye",  line = list(width = 3)) %>%
+  layout(title = "Günlük İyileşen Sayısı Grafiği",
+         yaxis = list(title = "Günlük İyileşen Sayısı",type = "scatter"),
+         xaxis = list(title = "Tarih"),
+         legend = list(x = 0.7, y = 0.3))
+```
+
+Toplam İyileşen Sayısı Grafiği
+```{r}
+plot_ly(data = coronavirus_Turkey) %>%
+  add_lines(x = ~ date,
+            y = ~ confirmed_recovered,
+            name = "Türkiye",  line = list(width = 3)) %>%
+  layout(title = "Toplam İyileşen Sayısı Grafiği",
+         yaxis = list(title = "Toplam İyileşen Sayısı Grafiği",type = "scatter"),
+         xaxis = list(title = "Tarih"),
+         legend = list(x = 0.7, y = 0.3))
+```
+
+Aktif Vaka Sayısı Grafiği
+```{r}
+plot_ly(data = coronavirus_Turkey) %>%
+  add_lines(x = ~ date,
+            y = ~ confirmed_active,
+            name = "Türkiye",  line = list(width = 3)) %>%
+  layout(title = "Aktif Vaka Sayısı Grafiği",
+         yaxis = list(title = "Aktif Vaka Sayısı",type = "scatter"),
+         xaxis = list(title = "Tarih"),
+         legend = list(x = 0.7, y = 0.3))
+```
+
+Günlük Vefat Oranı Grafiği - (Günlük Vefat Oranı = Günlük Vefat Sayısı /Günlük Vaka Sayısı)
+```{r}
+coronavirus_Turkey <- coronavirus_Turkey %>%
+  mutate(death_ratio = (death / confirmed)*100)
+```
+
+Günlük Vefat Oranı Grafiği
+```{r}
+plot_ly(data = coronavirus_Turkey) %>%
+  add_lines(x = ~ date,
+            y = ~ death_ratio,
+            name = "Türkiye",  line = list(width = 3)) %>%
+  layout(title = "Günlük Vefat Oranı Grafiği",
+         yaxis = list(title = "Günlük Vefat Oranı",type = "scatter"),
+         xaxis = list(title = "Tarih"),
+         legend = list(x = 0.7, y = 0.3))
+```
